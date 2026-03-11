@@ -58,13 +58,19 @@ class GPT(nn.Module):
         self.max_seq_len = max_seq_len
         self.init_std = init_std
 
-        self.input_embedding = ??? # TODO: Define the input embedding layer
-        self.positional_embedding = ??? # TODO: Define the learnable positional embedding
+        self.input_embedding = nn.Embedding(vocab_size, dim) # TODO: Define the input embedding layer
+        self.positional_embedding = nn.Parameter(torch.randn(max_seq_len, dim) * self.init_std) # TODO: Define the learnable positional embedding
         
-        self.trunk = ??? # TODO: Define the transformer trunk
+        self.trunk = TransformerTrunk(
+            dim=dim,
+            depth=depth,
+            head_dim=head_dim,
+            mlp_ratio=mlp_ratio,
+            use_bias=use_bias
+        ) # TODO: Define the transformer trunk
         
-        self.out_norm = ??? # TODO: Define the output layer normalization. Use the LayerNorm class defined in modeling/transformer_layers.py
-        self.to_logits = ??? # TODO: Define the output projection layer
+        self.out_norm = LayerNorm(dim) # TODO: Define the output layer normalization. Use the LayerNorm class defined in modeling/transformer_layers.py
+        self.to_logits = nn.Linear(dim, vocab_size, bias=False) # TODO: Define the output projection layer
 
         self.initialize_weights() # Weight initialization
 
