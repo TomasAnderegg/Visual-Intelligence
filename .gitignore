@@ -1,5 +1,7 @@
 *.egg-info
 4M_Tutorial/retrieval_data
+Transformer_Homework/data/
+clevr/
 nano4M/outputs
 nano4M/wandb
 nano4M/data/
