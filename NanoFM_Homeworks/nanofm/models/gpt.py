@@ -58,13 +58,19 @@ class GPT(nn.Module):
         self.max_seq_len = max_seq_len
         self.init_std = init_std
 
-        self.input_embedding = ??? # TODO: Define the input embedding layer
-        self.positional_embedding = ??? # TODO: Define the learnable positional embedding
+        self.input_embedding = nn.Embedding(vocab_size, dim) # TODO: Define the input embedding layer
+        self.positional_embedding = nn.Parameter(torch.randn(max_seq_len, dim) * self.init_std) # TODO: Define the learnable positional embedding
         
-        self.trunk = ??? # TODO: Define the transformer trunk
+        self.trunk = TransformerTrunk(
+            dim=dim,
+            depth=depth,
+            head_dim=head_dim,
+            mlp_ratio=mlp_ratio,
+            use_bias=use_bias
+        ) # TODO: Define the transformer trunk
         
-        self.out_norm = ??? # TODO: Define the output layer normalization. Use the LayerNorm class defined in modeling/transformer_layers.py
-        self.to_logits = ??? # TODO: Define the output projection layer
+        self.out_norm = LayerNorm(dim) # TODO: Define the output layer normalization. Use the LayerNorm class defined in modeling/transformer_layers.py
+        self.to_logits = nn.Linear(dim, vocab_size, bias=False) # TODO: Define the output projection layer
 
         self.initialize_weights() # Weight initialization
 
@@ -113,35 +119,39 @@ class GPT(nn.Module):
         """
         B, L = x.size() # batch size and sequence length
 
-        # TODO: Embed the input tokens using the input embedding layer. Shape: [B, L, D]
-        ???
+        # TODO: Embed the input tokens using the input embedding layer. Shape: [B, L, D] = [batch_size, Sequence_Lenght, Embedding dimension]
+        # batch_size =  combien d'exemple il y a dans le batch, L la taille de chaque exemple, D = chaque elevement d'une ligne aura un vecteur de dimension D apres embedding
+        x = self.input_embedding(x)
         
         # TODO: Add the positional embeddings to the tokens
         # Hint: Make sure this works for sequences of different lengths
-        ???
+        x = x + self.positional_embedding[:L]
 
         # TODO: Define the causal mask for the transformer trunk. 
-        # False = masked-out, True = not masked. Shape: [1, L, L]
+        # False = masked-out ( donc on masque), True = not masked. Shape: [1, L, L]
         # Hint: What shape should the mask have such that each token can attend to itself and
-        # all previous tokens, but not to any future tokens?
-        ???
+        # all previous tokens, but not to any future tokens? Donv On met True là où l’attention est autorisée
+        
+        mask = torch.tril(torch.ones(L, L, device=x.device)).bool()
+        mask = mask.unsqueeze(0)
             
         # TODO: Forward pass through Transformer trunk
         # Hint: Make sure to pass the causal mask to the transformer trunk too
-        ???
+        for block in self.trunk:
+            x = block(x, mask)
         
         # TODO: Pass to the output normalization and output projection layer to compute the logits
-        ???
-
+        x = self.out_norm(x)
+        logits = self.to_logits(x) #dim to vocab size attention
         # TODO: Return the logits
-        return ???
+        return logits #[batch_size, Sequence_Lenght, vocab_size]
 
     def compute_ce_loss(self, logits: torch.Tensor, target_seq: torch.LongTensor, padding_idx: int = -100) -> torch.Tensor:
         """
         Compute the cross-entropy loss given logits and target labels, ignoring padding tokens.
 
         Args:
-             logits: Tensor of shape (B, L, vocab_size)
+             logits: Tensor of shape (B, L, vocab_size) = [batch_size, Sequence_Lenght, vocab_size]
              target_seq: Tensor of shape (B, L) containing the target token indices.
              padding_idx: The index of the [PAD] token that should be ignored in the loss computation.
         Returns:
@@ -149,7 +159,14 @@ class GPT(nn.Module):
         """
         # TODO: Compute the cross-entropy loss
         # Hint: Remember to ignore the padding token index in the loss calculation
-        ???
+        #Donc logits: (B, L, vocab_size)
+        #Target: (B,L)
+        #F.cross_entropy((N=batch_size, C=number of classes), (N=batch_size), ignore_index=-100)
+        logits = logits.permute(0,2,1)  # (B, C, L)
+        loss = F.cross_entropy(logits, target_seq, ignore_index=padding_idx)
+
+        return loss
+
 
     def forward(self, data_dict: Dict[str, Any]) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
@@ -198,21 +215,28 @@ class GPT(nn.Module):
 
         # Initialize the sequence with the start-of-sequence token
         current_tokens = torch.tensor([context], dtype=torch.long, device=self.device)
-        for _ in range(self.max_seq_len - len(context)):
+        for _ in range(self.max_seq_len - len(context)): #boucle de génération
 
             # Run a forward pass through the model to get the logits
-            ???
+            logits = self(current_tokens)
 
             # Keep only the last token's logits and sample the next token
             # Hint: Use the sample_tokens function from utils/sampling.py
             # Make sure to pass the temperature, top_k and top_p arguments
-            ???
+            last_logits = logits[:, -1, :] #[batch size, senquence length, vocab size]
+            next_token = sample_tokens(
+                                            last_logits,    # logits du dernier token
+                                            temperature=temp,
+                                            top_k=top_k,
+                                            top_p=top_p
+                                        ) 
 
             # Concatenate the new token to the current_tokens sequence
-            ???
+            current_tokens = torch.cat([current_tokens, next_token], dim=1)  # shape = (1, L+1)
 
             # Break if the end-of-sequence token is generated
-            ???
+            if eos_idx is not None and next_token.item() == eos_idx:
+                break
 
         if was_training:
             self.train()
